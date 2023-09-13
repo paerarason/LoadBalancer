@@ -4,11 +4,18 @@ import (
     "net/http/httputil"
 	"log"
 	"net/url"
+	"net/http"
 )
 
 type  server struct{
    IP string
    proxy *httputil.ReverseProxy 
+}
+
+type Server interface  {
+	Address() string 
+	IsAlive() bool
+	Serve(rw http.ResponseWriter, r *http.Request)
 }
 
 func NewServer(IP string ) *server{
@@ -19,7 +26,13 @@ func NewServer(IP string ) *server{
 	proxy:httputil.NewSingleHostReverseProxy(server_url),
    }
 }
- 
+
+
+type Loadbalancer struct{
+	port string
+	RoundrobinCount int16
+	servers [] server
+} 
 
 func main(){
 	fmt.Println("hello server")
