@@ -34,6 +34,18 @@ type Loadbalancer struct{
 	servers [] server
 } 
 
+func NewLoadbalancer(port string , servers [] server) *Loadbalancer {
+	return &Loadbalancer{
+		port:port,
+		servers:servers,
+		RoundrobinCount:0,}
+}
+
+func (lb *Loadbalancer) get_Available_server() server{
+   	
+}
+
+
 func main(){
 	fmt.Println("hello server")
 }
