@@ -8,6 +8,6 @@ A reverse proxy is a server that sits in front of web servers and forwards clien
 
 #### A forward proxy, often called a proxy, proxy server, or web proxy, is a server that sits in front of a group of client machines. When those computers make requests to sites and services on the Internet, the proxy server intercepts those requests and then communicates with web servers on behalf of those clients, like a middleman.
 For example, let’s name 3 computers involved in a typical forward proxy communication:
-A: This is a user’s home computer
-B: This is a forward proxy server
-C: This is a website’s origin server (where the website data is stored)
+- A: This is a user’s home computer
+- B: This is a forward proxy server
+- C: This is a website’s origin server (where the website data is stored)
