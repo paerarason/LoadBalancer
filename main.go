@@ -1,58 +1,130 @@
 package main
+
 import (
-	"fmt"
+    "encoding/json"
+    "io/ioutil"
+    "log"
+    "net"
+    "net/http"
     "net/http/httputil"
-	"log"
-	"net/url"
-	"net/http"
+    "net/url"
+    "sync"
+    "time"
 )
 
-type  server struct{
-   IP string
-   proxy *httputil.ReverseProxy 
+// Config is a configuration.
+type Config struct {
+    Proxy    Proxy     `json:"proxy"`
+    Backends []Backend `json:"backends"`
 }
 
-type Server interface  {
-	Address() string 
-	IsAlive() bool
-	Serve(rw http.ResponseWriter, r *http.Request)
+// Proxy is a reverse proxy, and means load balancer.
+type Proxy struct {
+    Port string `json:"port"`
 }
 
-func NewServer(IP string ) *server{
-   server_url,err:=url.Parse(IP)
-   ERRhandler(err)
-   return &server{
-	IP:IP,
-	proxy:httputil.NewSingleHostReverseProxy(server_url),
-   }
+// Backend is servers which load balancer is transferred.
+type Backend struct {
+    URL    string `json:"url"`
+    IsDead bool
+    mu     sync.RWMutex
 }
 
-
-type Loadbalancer struct{
-	port string
-	RoundrobinCount int16
-	servers [] server
-} 
-
-func NewLoadbalancer(port string , servers [] server) *Loadbalancer {
-	return &Loadbalancer{
-		port:port,
-		servers:servers,
-		RoundrobinCount:0,}
+// SetDead updates the value of IsDead in Backend.
+func (backend *Backend) SetDead(b bool) {
+    backend.mu.Lock()
+    backend.IsDead = b
+    backend.mu.Unlock()
 }
 
-func (lb *Loadbalancer) get_Available_server() server{
-   	
+// GetIsDead returns the value of IsDead in Backend.
+func (backend *Backend) GetIsDead() bool {
+    backend.mu.RLock()
+    isAlive := backend.IsDead
+    backend.mu.RUnlock()
+    return isAlive
 }
 
+var mu sync.Mutex
+var idx int = 0
 
-func main(){
-	fmt.Println("hello server")
+// lbHandler is a handler for loadbalancing
+func lbHandler(w http.ResponseWriter, r *http.Request) {
+    maxLen := len(cfg.Backends)
+    // Round Robin
+    mu.Lock()
+    currentBackend := cfg.Backends[idx%maxLen]
+    if currentBackend.GetIsDead() {
+        idx++
+    }
+    targetURL, err := url.Parse(cfg.Backends[idx%maxLen].URL)
+    if err != nil {
+        log.Fatal(err.Error())
+    }
+    idx++
+    mu.Unlock()
+    reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
+    reverseProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, e error) {
+        // NOTE: It is better to implement retry.
+        log.Printf("%v is dead.", targetURL)
+        currentBackend.SetDead(true)
+        lbHandler(w, r)
+    }
+    reverseProxy.ServeHTTP(w, r)
 }
 
+// pingBackend checks if the backend is alive.
+func isAlive(url *url.URL) bool {
+    conn, err := net.DialTimeout("tcp", url.Host, time.Minute*1)
+    if err != nil {
+        log.Printf("Unreachable to %v, error:", url.Host, err.Error())
+        return false
+    }
+    defer conn.Close()
+    return true
+}
 
-func ERRhandler(err error){
-	if err !=nil {
-		log.Fatal(err)
-	}
- }
+// healthCheck is a function for healthcheck
+func healthCheck() {
+    t := time.NewTicker(time.Minute * 1)
+    for {
+        select {
+        case <-t.C:
+            for _, backend := range cfg.Backends {
+                pingURL, err := url.Parse(backend.URL)
+                if err != nil {
+                    log.Fatal(err.Error())
+                }
+                isAlive := isAlive(pingURL)
+                backend.SetDead(!isAlive)
+                msg := "ok"
+                if !isAlive {
+                    msg = "dead"
+                }
+                log.Printf("%v checked %v by healthcheck", backend.URL, msg)
+            }
+        }
+    }
+
+}
+
+var cfg Config
+
+// Serve serves a loadbalancer.
+func Serve() {
+    data, err := ioutil.ReadFile("./config.json")
+    if err != nil {
+        log.Fatal(err.Error())
+    }
+    json.Unmarshal(data, &cfg)
+
+    go healthCheck()
+
+    s := http.Server{
+        Addr:    ":" + cfg.Proxy.Port,
+        Handler: http.HandlerFunc(lbHandler),
+    }
+    if err = s.ListenAndServe(); err != nil {
+        log.Fatal(err.Error())
+    }
+}
