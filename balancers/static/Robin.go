@@ -1,4 +1,5 @@
-package balancers
+package static
+
 
 import (
     "encoding/json"
@@ -28,7 +29,6 @@ type Backend struct {
     IsDead bool
     mu     sync.RWMutex
 }
-
 
 func (backend *Backend) SetDead(b bool) {
     backend.mu.Lock()
